@@ -34,3 +34,5 @@
 - `步骤2`中的`cookie`是以 *minutes_csrf_token=* 为开头的很长的一个字符串。
 - `步骤4`中的`cookie`是以 *passport_web_did=* 为开头的很长的一个字符串。
 - 是否使用代理可根据自己的情况自行设置。默认不使用。
+- [飞书分片上传文件API](https://open.feishu.cn/document/server-docs/docs/drive-v1/upload/multipart-upload-file-/introduction) 中声明该接口不支持太高的并发且调用频率上限为5QPS
+，且本人无批量转文字需求，故未对多个文件的同时转写进行尝试。本项目仅为实现上传与下载的自动化。
