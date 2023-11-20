@@ -16,7 +16,7 @@ class FeishuUploader:
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
             'cookie' : cookie,
             'bv-csrf-token' : cookie[cookie.find('bv_csrf_token=') + len('bv_csrf_token='):cookie.find(';', cookie.find('bv_csrf_token='))],
-            'referer' : f'https://meetings.feishu.cn/minutes/home'
+            'referer' : f'https://minutes.feishu.cn/minutes/home'
         }
         if len(self.headers.get('bv-csrf-token')) != 36:
             raise Exception("cookie中不包含bv_csrf_token，请确保从请求`list?size=20&`中获取！")
