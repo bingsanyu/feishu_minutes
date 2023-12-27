@@ -77,7 +77,6 @@ class FeishuUploader:
                         completed_threads.append(thread)
                     for thread in as_completed(completed_threads):
                         progress_bar.update(1)
-                        progress_bar.set_postfix({"speed": f"{self.block_size / (time.time() - progress_bar.start_t) / 1024 / 1024 * 8:.2f} Mbit/s"})
     
     # 分片上传文件（完成上传）
     # doc: https://open.feishu.cn/document/server-docs/docs/drive-v1/upload/multipart-upload-file-/upload_finish
@@ -106,15 +105,17 @@ class FeishuUploader:
         print(res)
 
         # 上传完成后检查是否转写完成
+        start_time = time.time()
         while True:
             time.sleep(3)
             object_status_url = f'https://meetings.feishu.cn/minutes/api/batch-status?object_token[]={self.object_token}&language=zh_cn'
             object_status = requests.get(object_status_url, headers=self.headers, proxies=proxies).json()
             transcript_progress = object_status['data']['status'][0]['transcript_progress']
+            spend_time = time.time() - start_time
             if object_status['data']['status'][0]['object_status'] == 2 or transcript_progress['current'] == '':
-                print(f"\n转写完成！http://meetings.feishu.cn/minutes/{object_status['data']['status'][0]['object_token']}")
+                print(f"\n转写完成！用时{spend_time}\nhttp://meetings.feishu.cn/minutes/{object_status['data']['status'][0]['object_token']}")
                 break
-            print(f"转写中...已转写时长（通常小于视频总时长）：{float(transcript_progress['current'])/60:.2f}min rate:{transcript_progress['rate']}\r", end='')
+            print(f"转写中...已用时{spend_time}\r", end='')
 
     def upload(self):
         self.get_quota()
