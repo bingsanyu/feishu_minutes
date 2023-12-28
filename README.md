@@ -25,14 +25,8 @@
 
 ## 注意事项
 
-- `feishu_downloader.py`中`space_name`的取值
-  - `1`：主页（包含归属人为自己的妙记，和别人共享给自己的妙记）
-  - `2`：我的内容（只包含归属人为自己的妙记）
-- `feishu_downloader.py`中`is_meetings_only`的取值
-  - `False`（默认）：会议生成的妙记和自己上传的妙记均下载
-  - `True`：只下载会议生成的妙记
+- 下载需要用到aria2，本仓库中给出的是win64版本的，如果你是其他操作系统请在 https://github.com/aria2/aria2/releases 中下载相应版本并替换。
 - `步骤2`中的`cookie`是以 *minutes_csrf_token=* 为开头的很长的一个字符串。
 - `步骤4`中的`cookie`是以 *passport_web_did=* 为开头的很长的一个字符串。
 - 是否使用代理可根据自己的情况自行设置。默认不使用。
-- [飞书分片上传文件API](https://open.feishu.cn/document/server-docs/docs/drive-v1/upload/multipart-upload-file-/introduction) 中声明该接口不支持太高的并发且调用频率上限为5QPS
-，且本人无批量转文字需求，故未对多个文件的同时转写进行尝试。本项目仅为实现上传与下载的自动化。
+- [飞书分片上传文件API](https://open.feishu.cn/document/server-docs/docs/drive-v1/upload/multipart-upload-file-/introduction) 中声明该接口不支持太高的并发且调用频率上限为5QPS，且本人无批量转文字需求，故未对多个文件的同时转写进行尝试。本项目仅为实现上传与下载的自动化。
