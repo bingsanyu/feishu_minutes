@@ -81,11 +81,14 @@ class FeishuDownloader:
                 for future in as_completed(futures):
                     video_url = future.result()[0]
                     file_name = future.result()[1]
-                    file.write(f'{video_url}\n out=data/{file_name}/{file_name}.mp4\n')
-                    self.meeting_time_dict[file_name] = future.result()[2]
+                    video_name = file_name
+                    time_stamp = future.result()[2]
+                    if time_stamp[-6] == '_':
+                        video_name = video_name + '_' + time_stamp[-5:]
+                    file.write(f'{video_url}\n out=data/{file_name}/{video_name}.mp4\n')
 
         headers_option = ' '.join(f'--header="{k}: {v}"' for k, v in self.headers.items())
-        cmd = f'aria2c -c --input-file=links.temp {headers_option} --continue=true --console-log-level=warn'
+        cmd = f'aria2c -c --input-file=links.temp {headers_option} --continue=true --auto-file-renaming=true --console-log-level=warn'
         subprocess.run(cmd, shell=True)
 
         # 删除临时文件
@@ -124,21 +127,30 @@ class FeishuDownloader:
         file_name = re.sub(rstr, '_', file_name)  # 将标题中的特殊字符替换为下划线
         
         # 如果妙记来自会议，则将会议起止时间作为文件名的一部分
-        if minutes['object_type'] ==0:
+        if minutes['object_type'] == 0:
             # 根据会议的起止时间和标题来设置文件名
             start_time = time.strftime("%Y年%m月%d日%H时%M分", time.localtime(minutes['start_time'] / 1000))
             stop_time = time.strftime("%Y年%m月%d日%H时%M分", time.localtime(minutes['stop_time'] / 1000))
             file_name = start_time+"至"+stop_time+file_name
-        
+            srt_name = file_name
+        else:
+            # 取当前时间戳后5位
+            time_stamp = str(int(time.time() * 1000))[-5:]
+            srt_name = file_name + '_' + time_stamp
+            
         # 创建文件夹
         if not os.path.exists(f'data/{file_name}'):
             os.makedirs(f'data/{file_name}')
 
         # 写入字幕文件
-        with open(f'data/{file_name}/{file_name}.srt', 'w', encoding='utf-8') as f:
+        with open(f'data/{file_name}/{srt_name}.srt', 'w', encoding='utf-8') as f:
             f.write(resp.text)
         
-        return video_url, file_name, minutes['start_time']/1000
+        # 如果妙记来自会议，则记录会议起止时间
+        if minutes['object_type'] == 1:
+            self.meeting_time_dict[file_name] = minutes['start_time']/1000
+
+        return video_url, file_name, srt_name
 
     def delete_minutes(self, num):
         """
