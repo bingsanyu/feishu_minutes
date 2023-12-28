@@ -8,7 +8,7 @@
 
 ## 使用步骤
 
-1. 首先安装 request 库和 tqdm 库 `pip install requests tqdm`。
+1. 首先安装 requests 库和 tqdm 库 `pip install requests tqdm`。
   
 2. 打开[飞书妙记主页](https://meetings.feishu.cn/minutes/home)，按F12打开开发者工具，点击`网络`栏，刷新后复制网络请求 *list?size=20&space_name=* 中的`cookie`。
 

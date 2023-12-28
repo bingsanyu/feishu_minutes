@@ -1,7 +1,8 @@
 import base64, time, uuid, zlib
+from concurrent.futures import as_completed, ThreadPoolExecutor
+
 import requests
 from tqdm import tqdm
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 # 在飞书妙记主页获取
