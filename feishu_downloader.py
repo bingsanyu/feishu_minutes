@@ -147,7 +147,7 @@ class FeishuDownloader:
             f.write(resp.text)
         
         # 如果妙记来自会议，则记录会议起止时间
-        if minutes['object_type'] == 1:
+        if minutes['object_type'] == 0:
             self.meeting_time_dict[file_name] = minutes['start_time']/1000
 
         return video_url, file_name, srt_name
