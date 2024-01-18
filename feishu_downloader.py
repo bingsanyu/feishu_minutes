@@ -88,7 +88,11 @@ class FeishuDownloader:
                     file.write(f'{video_url}\n out=data/{file_name}/{video_name}.mp4\n')
 
         headers_option = ' '.join(f'--header="{k}: {v}"' for k, v in self.headers.items())
-        cmd = f'aria2c -c --input-file=links.temp {headers_option} --continue=true --auto-file-renaming=true --console-log-level=warn'
+        proxy_cmd = ""
+        for proxy_type, proxy_url in proxies.items():
+            if proxy_url is not None:
+                proxy_cmd += f' --{proxy_type}-proxy={proxy_url}'
+        cmd = f'aria2c -c --input-file=links.temp {headers_option} --continue=true --auto-file-renaming=true --console-log-level=warn {proxy_cmd}'
         subprocess.run(cmd, shell=True)
 
         # 删除临时文件
