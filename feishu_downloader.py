@@ -1,4 +1,4 @@
-import locale, os, re, subprocess, time
+import configparser, locale, os, re, subprocess, time
 from concurrent.futures import as_completed, ThreadPoolExecutor
 
 import requests
@@ -7,23 +7,35 @@ from tqdm import tqdm
 locale.setlocale(locale.LC_CTYPE,"chinese")
 
 
-# 在飞书妙记主页 https://meetings.feishu.cn/minutes/home 获取该cookie
-minutes_cookie = ""
-# （可选，需身份为企业创建人、超级管理员或普通管理员）在飞书管理后台获取该cookie
-manager_cookie = ""
-
-space_name = 1 # 1:主页（包含归属人为自己的妙记，和别人共享给自己的妙记）; 2:我的内容（只包含归属人为自己的妙记）
-download_type = 2 # 0:只下载会议妙记; 1:只下载自己上传的妙记; 2:下载所有妙记.
-subtitle_only = False # 是否只下载字幕文件
-
-subtitle_params = {'add_speaker': 'true', # 包含说话人
-                   'add_timestamp': 'true', # 包含时间戳
-                   'format': '3', # 2:TXT; 3:SRT
+# 读取配置文件
+config = configparser.ConfigParser(interpolation=None)
+config.read('config.ini', encoding='utf-8')
+# 获取配置文件中的cookie
+minutes_cookie = config.get('Cookies', 'minutes_cookie')
+manager_cookie = config.get('Cookies', 'manager_cookie')
+# 获取下载设置
+space_name = config.get('下载设置', '所在空间')
+download_type = config.get('下载设置', '文件类型')
+subtitle_only = True if config.get('下载设置', '是否只下载字幕文件（是/否）')=='是' else False
+# 获取保存路径
+save_path = config.get('下载设置', '保存路径（不填则默认为当前路径/data）')
+if not save_path:
+    save_path = './data'
+# 获取字幕格式设置
+subtitle_params = {'add_speaker': True if config.get('下载设置', '字幕是否包含说话人（是/否）')=='是' else False,
+                   'add_timestamp': True if config.get('下载设置', '字幕是否包含时间戳（是/否）')=='是' else False,
+                   'format': 3 if config.get('下载设置', '字幕格式（srt/txt）')=='srt' else 2
                    }
-
-proxies = {'http': None, 'https': None}
-# proxies = {'http': '127.0.0.1:7890', 'https': '127.0.0.1:7890'} # Python3.6
-# proxies = {'http': 'http://127.0.0.1:7890', 'https': 'https://127.0.0.1:7890'} # Python3.7及以上
+# 获取代理设置
+use_proxy = config.get('代理设置', '是否使用代理（是/否）')
+proxy_address = config.get('代理设置', '代理地址')
+if use_proxy == '是':
+    proxies = {
+        'http': proxy_address,
+        'https': proxy_address,
+    }
+else:
+    proxies = None
 
 
 class FeishuDownloader:
@@ -89,14 +101,13 @@ class FeishuDownloader:
                     video_url = future.result()[0]
                     file_name = future.result()[1]
                     video_name = file_name
-                    file.write(f'{video_url}\n out=data/{file_name}/{video_name}.mp4\n')
+                    file.write(f'{video_url}\n out={save_path}/{file_name}/{video_name}.mp4\n')
 
         if not subtitle_only:
             headers_option = ' '.join(f'--header="{k}: {v}"' for k, v in self.headers.items())
             proxy_cmd = ""
-            for proxy_type, proxy_url in proxies.items():
-                if proxy_url is not None:
-                    proxy_cmd += f' --{proxy_type}-proxy={proxy_url}'
+            if proxies is not None:
+                proxy_cmd = f'--all-proxy={proxies["http"]}'
             cmd = f'aria2c -c --input-file=links.temp {headers_option} --continue=true --auto-file-renaming=true --console-log-level=warn {proxy_cmd}'
             subprocess.run(cmd, shell=True)
 
@@ -105,10 +116,10 @@ class FeishuDownloader:
 
         # 修改会议妙记的创建时间
         for file_name, start_time in self.meeting_time_dict.items():
-            os.utime(f'data/{file_name}', (start_time, start_time))
+            os.utime(f'{save_path}/{file_name}', (start_time, start_time))
             if not subtitle_only:
-                os.utime(f'data/{file_name}/{file_name}.mp4', (start_time, start_time))
-            os.utime(f'data/{file_name}/{file_name}.{self.subtitle_type}', (start_time, start_time))
+                os.utime(f'{save_path}/{file_name}/{file_name}.mp4', (start_time, start_time))
+            os.utime(f'{save_path}/{file_name}/{file_name}.{self.subtitle_type}', (start_time, start_time))
         self.meeting_time_dict = {}
 
     def get_minutes_url(self, minutes):
@@ -144,11 +155,11 @@ class FeishuDownloader:
         subtitle_name = file_name
             
         # 创建文件夹
-        if not os.path.exists(f'data/{file_name}'):
-            os.makedirs(f'data/{file_name}')
+        if not os.path.exists(f'{save_path}/{file_name}'):
+            os.makedirs(f'{save_path}/{file_name}')
 
         # 写入字幕文件
-        with open(f'data/{file_name}/{subtitle_name}.{self.subtitle_type}', 'w', encoding='utf-8') as f:
+        with open(f'{save_path}/{file_name}/{subtitle_name}.{self.subtitle_type}', 'w', encoding='utf-8') as f:
             f.write(resp.text)
         
         # 如果妙记来自会议，则记录会议起止时间

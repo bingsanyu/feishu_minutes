@@ -1,20 +1,27 @@
-import base64, time, uuid, zlib
+import base64, configparser, time, uuid, zlib
 from concurrent.futures import as_completed, ThreadPoolExecutor
 
 import requests
 from tqdm import tqdm
 
 
-# 在飞书妙记主页获取
-cookie = ""
-
-# 你要上传的文件所在路径
-file_path = r""
-
-# 不使用系统代理
-proxies = {'http': None, 'https': None}
-# proxies = {'http': '127.0.0.1:7890', 'https': '127.0.0.1:7890'} # Python3.6
-# proxies = {'http': 'http://127.0.0.1:7890', 'https': 'https://127.0.0.1:7890'} # Python3.7及以上
+# 读取配置文件
+config = configparser.ConfigParser(interpolation=None)
+config.read('config.ini', encoding='utf-8')
+# 获取cookie
+minutes_cookie = config.get('Cookies', 'minutes_cookie')
+# 获取文件路径
+file_path = config.get('上传设置', '要上传的文件所在路径（目前仅支持单个文件）')
+# 获取代理设置
+use_proxy = config.get('代理设置', '是否使用代理（是/否）')
+proxy_address = config.get('代理设置', '代理地址')
+if use_proxy == '是':
+    proxies = {
+        'http': proxy_address,
+        'https': proxy_address,
+    }
+else:
+    proxies = None
 
 class FeishuUploader:
     def __init__(self, file_path, cookie):
@@ -134,5 +141,5 @@ class FeishuUploader:
 
 if __name__ == '__main__':
 
-    uploader = FeishuUploader(file_path, cookie)
+    uploader = FeishuUploader(file_path, minutes_cookie)
     uploader.upload()
