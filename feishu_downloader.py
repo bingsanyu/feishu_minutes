@@ -1,18 +1,25 @@
-import os, re, subprocess, time
+import locale, os, re, subprocess, time
 from concurrent.futures import as_completed, ThreadPoolExecutor
 
 import requests
 from tqdm import tqdm
 
+locale.setlocale(locale.LC_CTYPE,"chinese")
+
 
 # 在飞书妙记主页 https://meetings.feishu.cn/minutes/home 获取该cookie
 minutes_cookie = ""
-
 # （可选，需身份为企业创建人、超级管理员或普通管理员）在飞书管理后台获取该cookie
 manager_cookie = ""
 
-space_name = 2 # 1:主页（包含归属人为自己的妙记，和别人共享给自己的妙记）; 2:我的内容（只包含归属人为自己的妙记）
+space_name = 1 # 1:主页（包含归属人为自己的妙记，和别人共享给自己的妙记）; 2:我的内容（只包含归属人为自己的妙记）
 download_type = 2 # 0:只下载会议妙记; 1:只下载自己上传的妙记; 2:下载所有妙记.
+subtitle_only = False # 是否只下载字幕文件
+
+subtitle_params = {'add_speaker': 'true', # 包含说话人
+                   'add_timestamp': 'true', # 包含时间戳
+                   'format': '3', # 2:TXT; 3:SRT
+                   }
 
 proxies = {'http': None, 'https': None}
 # proxies = {'http': '127.0.0.1:7890', 'https': '127.0.0.1:7890'} # Python3.6
@@ -32,6 +39,7 @@ class FeishuDownloader:
             raise Exception("cookie中不包含bv_csrf_token，请确保从请求`list?size=20&`中获取！")
 
         self.meeting_time_dict = {} # 会议文件名称和会议时间的对应关系
+        self.subtitle_type = 'srt' if subtitle_params['format']==3 else 'txt'
         
     def get_minutes(self):
         """
@@ -74,7 +82,6 @@ class FeishuDownloader:
         """
         使用aria2批量下载妙记
         """
-        # 下载妙记视频
         with ThreadPoolExecutor(max_workers=10) as executor:
             with open('links.temp', 'w', encoding='utf-8') as file:
                 futures = [executor.submit(self.get_minutes_url, minutes) for minutes in minutes_list]
@@ -82,18 +89,16 @@ class FeishuDownloader:
                     video_url = future.result()[0]
                     file_name = future.result()[1]
                     video_name = file_name
-                    time_stamp = future.result()[2]
-                    if time_stamp[-6] == '_':
-                        video_name = video_name + '_' + time_stamp[-5:]
                     file.write(f'{video_url}\n out=data/{file_name}/{video_name}.mp4\n')
 
-        headers_option = ' '.join(f'--header="{k}: {v}"' for k, v in self.headers.items())
-        proxy_cmd = ""
-        for proxy_type, proxy_url in proxies.items():
-            if proxy_url is not None:
-                proxy_cmd += f' --{proxy_type}-proxy={proxy_url}'
-        cmd = f'aria2c -c --input-file=links.temp {headers_option} --continue=true --auto-file-renaming=true --console-log-level=warn {proxy_cmd}'
-        subprocess.run(cmd, shell=True)
+        if not subtitle_only:
+            headers_option = ' '.join(f'--header="{k}: {v}"' for k, v in self.headers.items())
+            proxy_cmd = ""
+            for proxy_type, proxy_url in proxies.items():
+                if proxy_url is not None:
+                    proxy_cmd += f' --{proxy_type}-proxy={proxy_url}'
+            cmd = f'aria2c -c --input-file=links.temp {headers_option} --continue=true --auto-file-renaming=true --console-log-level=warn {proxy_cmd}'
+            subprocess.run(cmd, shell=True)
 
         # 删除临时文件
         os.remove('links.temp')
@@ -101,8 +106,9 @@ class FeishuDownloader:
         # 修改会议妙记的创建时间
         for file_name, start_time in self.meeting_time_dict.items():
             os.utime(f'data/{file_name}', (start_time, start_time))
-            os.utime(f'data/{file_name}/{file_name}.mp4', (start_time, start_time))
-            os.utime(f'data/{file_name}/{file_name}.srt', (start_time, start_time))
+            if not subtitle_only:
+                os.utime(f'data/{file_name}/{file_name}.mp4', (start_time, start_time))
+            os.utime(f'data/{file_name}/{file_name}.{self.subtitle_type}', (start_time, start_time))
         self.meeting_time_dict = {}
 
     def get_minutes_url(self, minutes):
@@ -115,18 +121,13 @@ class FeishuDownloader:
         video_url = resp.json()['data']['video_info']['video_download_url']
 
         # 获取妙记字幕
-        srt_url = f'https://meetings.feishu.cn/minutes/api/export'
-        params = {'add_speaker': 'true', # 包含说话人
-                   'add_timestamp': 'true', # 包含时间戳
-                   'format': '3', # SRT格式
-                   'object_token': minutes['object_token'], # 妙记id
-                   }
-        resp = requests.post(url=srt_url, params=params, headers=self.headers, proxies=proxies)
+        subtitle_url = f'https://meetings.feishu.cn/minutes/api/export'
+        subtitle_params['object_token'] = minutes['object_token']
+        resp = requests.post(url=subtitle_url, params=subtitle_params, headers=self.headers, proxies=proxies)
         resp.encoding = 'utf-8'
 
         # 获取妙记标题
-        file_name = re.findall(r'filename="(.+)"', resp.headers['Content-Disposition'])[0][:-4]
-        file_name = file_name.encode('iso-8859-1').decode('utf-8')
+        file_name = minutes['topic']
         rstr = r'[\/\\\:\*\?\"\<\>\|]'
         file_name = re.sub(rstr, '_', file_name)  # 将标题中的特殊字符替换为下划线
         
@@ -136,25 +137,25 @@ class FeishuDownloader:
             start_time = time.strftime("%Y年%m月%d日%H时%M分", time.localtime(minutes['start_time'] / 1000))
             stop_time = time.strftime("%Y年%m月%d日%H时%M分", time.localtime(minutes['stop_time'] / 1000))
             file_name = start_time+"至"+stop_time+file_name
-            srt_name = file_name
         else:
-            # 取当前时间戳后5位
-            time_stamp = str(int(time.time() * 1000))[-5:]
-            srt_name = file_name + '_' + time_stamp
+            create_time = time.strftime("%Y年%m月%d日%H时%M分", time.localtime(minutes['create_time'] / 1000))
+            file_name = create_time+file_name
+        
+        subtitle_name = file_name
             
         # 创建文件夹
         if not os.path.exists(f'data/{file_name}'):
             os.makedirs(f'data/{file_name}')
 
         # 写入字幕文件
-        with open(f'data/{file_name}/{srt_name}.srt', 'w', encoding='utf-8') as f:
+        with open(f'data/{file_name}/{subtitle_name}.{self.subtitle_type}', 'w', encoding='utf-8') as f:
             f.write(resp.text)
         
         # 如果妙记来自会议，则记录会议起止时间
         if minutes['object_type'] == 0:
             self.meeting_time_dict[file_name] = minutes['start_time']/1000
 
-        return video_url, file_name, srt_name
+        return video_url, file_name
 
     def delete_minutes(self, num):
         """
