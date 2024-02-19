@@ -86,7 +86,7 @@ class FeishuUploader:
                     for i in range(block_count):
                         block_data = f.read(self.block_size)
                         block_size = len(block_data)
-                        checksum = zlib.adler32(block_data) % (10 ** 10)
+                        checksum = zlib.adler32(block_data) & 0xffffffff
                         upload_url = f'https://internal-api-space.feishu.cn/space/api/box/stream/upload/block?upload_id={self.upload_id}&seq={i}&size={block_size}&checksum={checksum}'
                         thread = executor.submit(requests.post, upload_url, headers=self.headers, proxies=proxies, data=block_data)
                         completed_threads.append(thread)
