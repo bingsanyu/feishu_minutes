@@ -20,12 +20,12 @@
 
 **上传妙记**
 
-6. 将要上传的视频路径填写到`config.ini`。
-7. 执行 `python feishu_uploader.py`。注意：代码中仅为单个文件的上传。请勿滥用。
+3. 将要上传的视频路径填写到`config.ini`。
+4. 执行 `python feishu_uploader.py`。注意：代码中仅为单个文件的上传。请勿滥用。
 
 ## 注意事项
 
 - 下载需要用到aria2，本仓库中给出的是win64版本的，如果你是其他操作系统请在 https://github.com/aria2/aria2/releases 中下载相应版本并替换。
-- `步骤2`中的`cookie`是以 *minutes_csrf_token=* 为开头的很长的一个字符串。
-- `步骤3`中的`cookie`是以 *passport_web_did=* 为开头的很长的一个字符串。
+- `minutes_cookie`是以 *minutes_csrf_token=* 为开头的很长的一个字符串。
+- `manager_cookie`是以 *passport_web_did=* 为开头的很长的一个字符串。
 - [飞书分片上传文件API](https://open.feishu.cn/document/server-docs/docs/drive-v1/upload/multipart-upload-file-/introduction) 中声明该接口不支持太高的并发且调用频率上限为5QPS，且本人无批量转文字需求，故未对多个文件的同时转写进行尝试。本项目仅为实现上传与下载的自动化。
