@@ -66,22 +66,23 @@ class FeishuDownloader:
         """
         检查需要下载的妙记
         """
-        all_minutes = self.get_minutes()
-        need_download_minutes = all_minutes
         
-        # 检查记录中不存在的妙记id进行下载
+        # 从文件中读取已下载的妙记id
+        downloaded_minutes = set()
         if os.path.exists('minutes.txt'):
             with open('minutes.txt', 'r') as f:
-                downloaded_minutes = f.readlines()
-            need_download_minutes = [minutes for minutes in need_download_minutes if minutes['object_token']+'\n' not in downloaded_minutes]
-
-        # 如果只下载会议妙记，则过滤掉自己上传的妙记
-        if download_type == 0:
-            need_download_minutes = [minutes for minutes in need_download_minutes if minutes['object_type']==0]
-        # 如果只下载自己上传的妙记，则过滤掉会议妙记
-        elif download_type == 1:
-            need_download_minutes = [minutes for minutes in need_download_minutes if minutes['object_type']==1]
+                downloaded_minutes = set(line.strip() for line in f)
         
+        # 获取所有妙记
+        all_minutes = self.get_minutes()
+
+        # 过滤需要下载的妙记
+        need_download_minutes = [
+            minutes for minutes in all_minutes
+            if minutes['object_token'] not in downloaded_minutes and
+            (download_type == 2 or minutes['object_type'] == download_type)
+        ]
+
         # 如果有需要下载的妙记则进行下载
         if need_download_minutes:
             self.download_minutes(need_download_minutes)
