@@ -49,7 +49,7 @@ class FeishuDownloader:
             'content-type': 'application/x-www-form-urlencoded'
         }
         if len(self.headers.get('bv-csrf-token')) != 36:
-            raise Exception("cookie中不包含bv_csrf_token，请确保从请求`list?size=20&`中获取！")
+            raise Exception("minutes_cookie中不包含bv_csrf_token，请确保从请求`list?size=20&`中获取！")
 
         self.meeting_time_dict = {} # 会议文件名称和会议时间的对应关系
         self.subtitle_type = 'srt' if subtitle_params['format']==3 else 'txt'
@@ -60,6 +60,9 @@ class FeishuDownloader:
         """
         get_rec_url = f'https://meetings.feishu.cn/minutes/api/space/list?&size={list_size}&space_name={space_name}'
         resp = requests.get(url=get_rec_url, headers=self.headers, proxies=proxies)
+        # 如果resp.json()['data']中没有list字段，则说明cookie失效
+        if 'list' not in resp.json()['data']:
+            raise Exception("minutes_cookie失效，请重新获取！")
         return list(reversed(resp.json()['data']['list'])) # 返回按时间正序排列的妙记信息（从旧到新）
 
     def check_minutes(self):
