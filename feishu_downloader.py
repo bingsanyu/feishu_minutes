@@ -14,9 +14,9 @@ config.read('config.ini', encoding='utf-8')
 minutes_cookie = config.get('Cookies', 'minutes_cookie')
 manager_cookie = config.get('Cookies', 'manager_cookie')
 # 获取下载设置
-space_name = config.get('下载设置', '所在空间')
+space_name = int(config.get('下载设置', '所在空间'))
 list_size = int(config.get('下载设置', '每次检查的妙记数量'))
-download_type = config.get('下载设置', '文件类型')
+download_type = int(config.get('下载设置', '文件类型'))
 subtitle_only = True if config.get('下载设置', '是否只下载字幕文件（是/否）')=='是' else False
 # 获取保存路径
 save_path = config.get('下载设置', '保存路径（不填则默认为当前路径/data）')
