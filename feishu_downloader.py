@@ -113,7 +113,7 @@ class FeishuDownloader:
             proxy_cmd = ""
             if proxies is not None:
                 proxy_cmd = f'--all-proxy={proxies["http"]}'
-            cmd = f'aria2c -c --input-file=links.temp {headers_option} --continue=true --auto-file-renaming=true --console-log-level=warn {proxy_cmd}'
+            cmd = f'aria2c -c --input-file=links.temp {headers_option} --continue=true --auto-file-renaming=true --console-log-level=warn {proxy_cmd} -s16 -x16 -k1M'
             subprocess.run(cmd, shell=True)
 
         # 删除临时文件
