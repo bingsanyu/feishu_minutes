@@ -178,25 +178,27 @@ class FeishuDownloader:
         删除指定数量的最早几个妙记
         """
         all_minutes = self.get_minutes()
-        num = num if num <= len(all_minutes) else 1
-        need_delete_minutes = all_minutes[:num]
 
-        for index in tqdm(need_delete_minutes, desc='删除妙记'):
-            # 将该妙记放入回收站
-            delete_url = f'https://meetings.feishu.cn/minutes/api/space/delete'
-            params = {'object_tokens': index['object_token'],
-                      'is_destroyed': 'false',
-                      'language': 'zh_cn'}
-            resp = requests.post(url=delete_url, params=params, headers=self.headers, proxies=proxies)
-            if resp.status_code != 200:
-                raise Exception(f"删除妙记 http://meetings.feishu.cn/minutes/{index['object_token']} 失败！{resp.json()}")
-            
-            # 将该妙记彻底删除
-            params['is_destroyed'] = 'true'
-            resp = requests.post(url=delete_url, params=params, headers=self.headers, proxies=proxies)
-            if resp.status_code != 200:
-                raise Exception(f"删除妙记 http://meetings.feishu.cn/minutes/{index['object_token']} 失败！{resp.json()}")
-            
+        for index in tqdm(all_minutes[:num], desc='删除妙记'):
+            try:
+                # 将该妙记放入回收站
+                delete_url = f'https://meetings.feishu.cn/minutes/api/space/delete'
+                params = {'object_tokens': index['object_token'],
+                        'is_destroyed': 'false',
+                        'language': 'zh_cn'}
+                resp = requests.post(url=delete_url, params=params, headers=self.headers, proxies=proxies)
+                if resp.status_code != 200:
+                    raise Exception(f"删除妙记 http://meetings.feishu.cn/minutes/{index['object_token']} 失败！{resp.json()}")
+
+                # 将该妙记彻底删除
+                params['is_destroyed'] = 'true'
+                resp = requests.post(url=delete_url, params=params, headers=self.headers, proxies=proxies)
+                if resp.status_code != 200:
+                    raise Exception(f"删除妙记 http://meetings.feishu.cn/minutes/{index['object_token']} 失败！{resp.json()}")
+            except Exception as e:
+                print(f"{e} 可能是没有该妙记的权限。")
+                num += 1
+                continue
 
 if __name__ == '__main__':
 
