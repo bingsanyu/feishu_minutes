@@ -18,6 +18,7 @@ space_name = int(config.get('下载设置', '所在空间'))
 list_size = int(config.get('下载设置', '每次检查的妙记数量'))
 download_type = int(config.get('下载设置', '文件类型'))
 subtitle_only = True if config.get('下载设置', '是否只下载字幕文件（是/否）')=='是' else False
+usage_threshold = float(config.get('下载设置', '妙记额度删除阈值（GB，填写了manager_cookie才有效）'))
 # 获取保存路径
 save_path = config.get('下载设置', '保存路径（不填则默认为当前路径/data）')
 if not save_path:
@@ -237,7 +238,7 @@ if __name__ == '__main__':
                 downloader = FeishuDownloader(minutes_cookie)
                 downloader.check_minutes()
                 # 如果已用超过9.65G则删除最早的两个妙记
-                if usage_bytes > 2 ** 30 * 9.65:
+                if usage_bytes > 2 ** 30 * usage_threshold:
                     downloader.delete_minutes(2)
             usage_bytes_old = usage_bytes #　更新已用字节数
             time.sleep(3600)
