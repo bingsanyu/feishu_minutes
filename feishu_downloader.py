@@ -16,6 +16,7 @@ manager_cookie = config.get('Cookies', 'manager_cookie')
 # 获取下载设置
 space_name = int(config.get('下载设置', '所在空间'))
 list_size = int(config.get('下载设置', '每次检查的妙记数量'))
+check_interval = int(config.get('下载设置', '检查妙记的时间间隔（单位s，太短容易报错）'))
 download_type = int(config.get('下载设置', '文件类型'))
 subtitle_only = True if config.get('下载设置', '是否只下载字幕文件（是/否）')=='是' else False
 usage_threshold = float(config.get('下载设置', '妙记额度删除阈值（GB，填写了manager_cookie才有效）'))
@@ -94,7 +95,7 @@ class FeishuDownloader:
             with open('minutes.txt', 'a') as f:
                 for minutes in need_download_minutes:
                     f.write(minutes['object_token']+'\n')
-            print(f"成功下载了{len(need_download_minutes)}个妙记，等待下次检查...")
+            print(f"成功下载了{len(need_download_minutes)}个妙记，等待{check_interval}s后再次检查...")
 
     def download_minutes(self, minutes_list):
         """
@@ -214,7 +215,7 @@ if __name__ == '__main__':
             # 如果下载到了妙记则删除最早的一个妙记
             if downloader.check_minutes():
                 downloader.delete_minutes(1)
-            time.sleep(3600)
+            time.sleep(check_interval)
 
     # 如果填写了管理参数，则定时查询妙记空间使用情况，超出指定额度则删除最早的指定数量的妙记
     else:
@@ -240,5 +241,8 @@ if __name__ == '__main__':
                 # 如果已用超过9.65G则删除最早的两个妙记
                 if usage_bytes > 2 ** 30 * usage_threshold:
                     downloader.delete_minutes(2)
+            else:
+                print(f"等待{check_interval}s后再次检查...")
             usage_bytes_old = usage_bytes #　更新已用字节数
-            time.sleep(3600)
+            
+            time.sleep(check_interval)
