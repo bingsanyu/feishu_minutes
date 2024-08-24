@@ -19,7 +19,7 @@ list_size = int(config.get('下载设置', '每次检查的妙记数量'))
 check_interval = int(config.get('下载设置', '检查妙记的时间间隔（单位s，太短容易报错）'))
 download_type = int(config.get('下载设置', '文件类型'))
 subtitle_only = True if config.get('下载设置', '是否只下载字幕文件（是/否）')=='是' else False
-usage_threshold = float(config.get('下载设置', '妙记额度删除阈值（GB，填写了manager_cookie才有效）'))
+usage_threshold = float(config.get('下载设置', '妙记额度删除阈值（单位GB，填写了manager_cookie才有效）'))
 # 获取保存路径
 save_path = config.get('下载设置', '保存路径（不填则默认为当前路径/data）')
 if not save_path:
