@@ -5,7 +5,7 @@
 ## 使用场景
 
 - 定期下载飞书会议视频与字幕，实现会议的自动备份。
-- 定期检查妙记额度使用情况，快要超出则删除旧的妙记。
+- 定期检查 ~~妙记额度~~统一存储空间 使用情况，快要超出则删除旧的妙记。
 - 从本地上传视频后导出字幕，实现语音转文字。
 
 ## 使用步骤
@@ -16,7 +16,7 @@
 
 **下载妙记**
 
-3. （可选）妙记余额不足才进行删除，以保证云端有尽量多的妙记：在[飞书管理后台](https://home.feishu.cn/admin/index)按F12，刷新后复制网络请求 *count?_t=* 中的`cookie`，粘贴至`config.ini`的`manager_cookie`。
+3. （可选）~~妙记额度~~统一存储空间 不足才进行删除，以保证云端有尽量多的妙记：在[飞书管理后台](https://home.feishu.cn/admin/index)按F12，刷新后复制网络请求 *count?_t=* 中的`cookie`，粘贴至`config.ini`的`manager_cookie`。
 4. 根据自身需求修改`config.ini`中的参数。
 5. 执行 `python feishu_downloader.py`。
 

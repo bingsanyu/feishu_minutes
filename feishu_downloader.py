@@ -18,15 +18,15 @@ space_name = int(config.get('下载设置', '所在空间'))
 list_size = int(config.get('下载设置', '每次检查的妙记数量'))
 check_interval = int(config.get('下载设置', '检查妙记的时间间隔（单位s，太短容易报错）'))
 download_type = int(config.get('下载设置', '文件类型'))
-subtitle_only = True if config.get('下载设置', '是否只下载字幕文件（是/否）')=='是' else False
-usage_threshold = float(config.get('下载设置', '妙记额度删除阈值（单位GB，填写了manager_cookie才有效）'))
+subtitle_only = config.get('下载设置', '是否只下载字幕文件（是/否）')=='是'
+usage_threshold = float(config.get('下载设置', '存储额度阈值（百分比，默认95%）（填写了manager_cookie才有效）'))
 # 获取保存路径
 save_path = config.get('下载设置', '保存路径（不填则默认为当前路径/data）')
 if not save_path:
     save_path = './data'
 # 获取字幕格式设置
-subtitle_params = {'add_speaker': True if config.get('下载设置', '字幕是否包含说话人（是/否）')=='是' else False,
-                   'add_timestamp': True if config.get('下载设置', '字幕是否包含时间戳（是/否）')=='是' else False,
+subtitle_params = {'add_speaker': config.get('下载设置', '字幕是否包含说话人（是/否）')=='是',
+                   'add_timestamp': config.get('下载设置', '字幕是否包含时间戳（是/否）')=='是',
                    'format': 3 if config.get('下载设置', '字幕格式（srt/txt）')=='srt' else 2
                    }
 # 获取代理设置
@@ -232,17 +232,18 @@ if __name__ == '__main__':
             query_url = f'https://www.feishu.cn/suite/admin/api/gaea/usages'
             manager_headers = {'cookie': manager_cookie, 'X-Csrf-Token':x_csrf_token}
             res = requests.get(url=query_url, headers=manager_headers, proxies=proxies)
-            usage_bytes = int(res.json()['data']['items'][6]['usage']) # 查询到的目前已用字节数
-            print(f"已用空间：{usage_bytes / 2 ** 30:.2f}GB")
+            usage_bytes = int(res.json()['data']['items'][0]['usage']) # 查询到的目前已用字节数
+            quota_bytes = int(res.json()['data']['items'][0]['quota']) # 查询到的总共可用字节数
+            print(f"已用空间：{usage_bytes / 2 ** 30:.2f}GB/{quota_bytes / 2 ** 30:.2f}GB")
             # 如果已用字节数有变化则下载妙记
             if usage_bytes != usage_bytes_old:
                 downloader = FeishuDownloader(minutes_cookie)
                 downloader.check_minutes()
-                # 如果已用超过9.65G则删除最早的两个妙记
-                if usage_bytes > 2 ** 30 * usage_threshold:
+                # 如果已用空间超过阈值则删除最早的两个妙记
+                if usage_bytes >= usage_threshold * quota_bytes:
                     downloader.delete_minutes(2)
             else:
                 print(f"等待{check_interval}s后再次检查...")
-            usage_bytes_old = usage_bytes #　更新已用字节数
+            usage_bytes_old = usage_bytes # 更新已用字节数
             
             time.sleep(check_interval)
