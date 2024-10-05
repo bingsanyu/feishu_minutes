@@ -19,7 +19,7 @@ list_size = int(config.get('下载设置', '每次检查的妙记数量'))
 check_interval = int(config.get('下载设置', '检查妙记的时间间隔（单位s，太短容易报错）'))
 download_type = int(config.get('下载设置', '文件类型'))
 subtitle_only = config.get('下载设置', '是否只下载字幕文件（是/否）')=='是'
-usage_threshold = float(config.get('下载设置', '存储额度阈值（百分比，默认95%）（填写了manager_cookie才有效）'))
+vc_quota_bytes = float(config.get('下载设置', '视频会议最大存储额度（单位GB，默认10GB）（填写了manager_cookie才有效）')) * 2 ** 30
 # 获取保存路径
 save_path = config.get('下载设置', '保存路径（不填则默认为当前路径/data）')
 if not save_path:
@@ -224,26 +224,31 @@ if __name__ == '__main__':
         if len(x_csrf_token) != 36:
             raise Exception("manager_cookie中不包含csrf_token，请确保从请求`count?_t=`中获取！")
 
-        usage_bytes_old = 0 # 上次记录的已经使用的字节数
+        vc_used_bytes_old = 0  # 上次记录的已经使用的字节数
         # 定期查询已使用的妙记空间字节数
         while True:
             print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
-            # 查询妙记空间已用字节数
-            query_url = f'https://www.feishu.cn/suite/admin/api/gaea/usages'
-            manager_headers = {'cookie': manager_cookie, 'X-Csrf-Token':x_csrf_token}
+            # query_url = f'https://www.feishu.cn/suite/admin/api/gaea/usages'
+            query_url = 'https://www.feishu.cn/suite/admin/resource/storage/overview?_t='+str(int(time.time()*1000))
+            manager_headers = {'cookie': manager_cookie, 'X-Csrf-Token': x_csrf_token}
             res = requests.get(url=query_url, headers=manager_headers, proxies=proxies)
-            usage_bytes = int(res.json()['data']['items'][0]['usage']) # 查询到的目前已用字节数
-            quota_bytes = int(res.json()['data']['items'][0]['quota']) # 查询到的总共可用字节数
-            print(f"已用空间：{usage_bytes / 2 ** 30:.2f}GB/{quota_bytes / 2 ** 30:.2f}GB")
-            # 如果已用字节数有变化则下载妙记
-            if usage_bytes != usage_bytes_old:
+            vc_used_bytes = int(res.json()['data']['detail']['vc'])
+            all_quota_bytes = int(res.json()['data']['quota'])
+            all_used_bytes = int(res.json()['data']['used'])
+            print(f"视频会议存储空间：{vc_used_bytes / 2 ** 30:.2f}GB/{vc_quota_bytes / 2 ** 30:.2f}GB")
+            print(f"总存储空间：{all_used_bytes / 2 ** 30:.2f}GB/{all_quota_bytes / 2 ** 30:.2f}GB")
+            if vc_used_bytes != vc_used_bytes_old:
                 downloader = FeishuDownloader(minutes_cookie)
                 downloader.check_minutes()
-                # 如果已用空间超过阈值则删除最早的两个妙记
-                if usage_bytes >= usage_threshold * quota_bytes:
+                # 如果已用超过指定阈值则删除最早的两个妙记
+                while vc_used_bytes > vc_quota_bytes:
+                    print(f"已用空间超过{vc_quota_bytes / 2 ** 30:.2f}GB，删除最早的两个妙记")
                     downloader.delete_minutes(2)
-            else:
-                print(f"等待{check_interval}s后再次检查...")
-            usage_bytes_old = usage_bytes # 更新已用字节数
-            
+                    time.sleep(3)
+                    res = requests.get(url=query_url, headers=manager_headers, proxies=proxies)
+                    res.raise_for_status()
+                    vc_used_bytes = int(res.json()['data']['detail']['vc'])
+                    print(f"视频会议存储空间：{vc_used_bytes / 2 ** 30:.2f}GB/{vc_quota_bytes / 2 ** 30:.2f}GB")
+            print(f"等待{check_interval}s后再次检查...")
+            vc_used_bytes_old = vc_used_bytes  # 更新已用字节数
             time.sleep(check_interval)
