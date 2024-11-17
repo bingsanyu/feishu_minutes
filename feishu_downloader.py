@@ -11,15 +11,14 @@ locale.setlocale(locale.LC_CTYPE,"chinese")
 config = configparser.ConfigParser(interpolation=None)
 config.read('config.ini', encoding='utf-8')
 # 获取配置文件中的cookie
-minutes_cookie = config.get('Cookies', 'minutes_cookie')
-manager_cookie = config.get('Cookies', 'manager_cookie')
+minutes_cookie = config.get('Cookies', 'cookie')
 # 获取下载设置
 space_name = int(config.get('下载设置', '所在空间'))
 list_size = int(config.get('下载设置', '每次检查的妙记数量'))
+vc_max_num = int(config.get('下载设置', '保留妙记的最大数量'))
 check_interval = int(config.get('下载设置', '检查妙记的时间间隔（单位s，太短容易报错）'))
 download_type = int(config.get('下载设置', '文件类型'))
 subtitle_only = config.get('下载设置', '是否只下载字幕文件（是/否）')=='是'
-vc_quota_bytes = float(config.get('下载设置', '视频会议最大存储额度（单位GB，默认10GB）（填写了manager_cookie才有效）')) * 2 ** 30
 # 获取保存路径
 save_path = config.get('下载设置', '保存路径（不填则默认为当前路径/data）')
 if not save_path:
@@ -52,7 +51,8 @@ class FeishuDownloader:
         }
         if len(self.headers.get('bv-csrf-token')) != 36:
             raise Exception("minutes_cookie中不包含bv_csrf_token，请确保从请求`list?size=20&`中获取！")
-
+        self.all_minutes = []
+        self.minutes_num = 0
         self.meeting_time_dict = {} # 会议文件名称和会议时间的对应关系
         self.subtitle_type = 'srt' if subtitle_params['format']==3 else 'txt'
         
@@ -65,7 +65,8 @@ class FeishuDownloader:
         # 如果resp.json()['data']中没有list字段，则说明cookie失效
         if 'list' not in resp.json()['data']:
             raise Exception("minutes_cookie失效，请重新获取！")
-        return list(reversed(resp.json()['data']['list'])) # 返回按时间正序排列的妙记信息（从旧到新）
+        self.all_minutes = list(reversed(resp.json()['data']['list'])) # 按时间正序排列的妙记信息（从旧到新）
+        self.minutes_num = len(self.all_minutes)
 
     def check_minutes(self):
         """
@@ -78,15 +79,17 @@ class FeishuDownloader:
             with open('minutes.txt', 'r') as f:
                 downloaded_minutes = set(line.strip() for line in f)
         
-        # 获取所有妙记
-        all_minutes = self.get_minutes()
+        # 获取云端所有妙记
+        self.get_minutes()
+        print(f"云端现有 {self.minutes_num} 个妙记")
 
         # 过滤需要下载的妙记
         need_download_minutes = [
-            minutes for minutes in all_minutes
+            minutes for minutes in self.all_minutes
             if minutes['object_token'] not in downloaded_minutes and
             (download_type == 2 or minutes['object_type'] == download_type)
         ]
+        print(f"需要下载 {len(need_download_minutes)} 个妙记")
 
         # 如果有需要下载的妙记则进行下载
         if need_download_minutes:
@@ -95,7 +98,7 @@ class FeishuDownloader:
             with open('minutes.txt', 'a') as f:
                 for minutes in need_download_minutes:
                     f.write(minutes['object_token']+'\n')
-            print(f"成功下载了{len(need_download_minutes)}个妙记，等待{check_interval}s后再次检查...")
+            print(f"成功下载了 {len(need_download_minutes)} 个妙记，等待 {check_interval} 秒后再次检查...")
 
     def download_minutes(self, minutes_list):
         """
@@ -179,76 +182,43 @@ class FeishuDownloader:
         """
         删除指定数量的最早几个妙记
         """
-        all_minutes = self.get_minutes()
-
-        for index in tqdm(all_minutes[:num], desc='删除妙记'):
-            try:
-                # 将该妙记放入回收站
-                delete_url = f'https://meetings.feishu.cn/minutes/api/space/delete'
-                params = {'object_tokens': index['object_token'],
-                        'is_destroyed': 'false',
-                        'language': 'zh_cn'}
-                resp = requests.post(url=delete_url, params=params, headers=self.headers, proxies=proxies)
-                if resp.status_code != 200:
-                    raise Exception(f"删除妙记 http://meetings.feishu.cn/minutes/{index['object_token']} 失败！{resp.json()}")
-
-                # 将该妙记彻底删除
-                params['is_destroyed'] = 'true'
-                resp = requests.post(url=delete_url, params=params, headers=self.headers, proxies=proxies)
-                if resp.status_code != 200:
-                    raise Exception(f"删除妙记 http://meetings.feishu.cn/minutes/{index['object_token']} 失败！{resp.json()}")
-            except Exception as e:
-                print(f"{e} 可能是没有该妙记的权限。")
-                num += 1
-                continue
+        old_all_minutes = self.all_minutes
+        successed_num = 0
+        unsuccessed_num = 0
+        for index in tqdm(old_all_minutes[:num+unsuccessed_num], desc='删除妙记'):
+            old_minutes_num = self.minutes_num
+            # 将该妙记放入回收站
+            delete_url = f'https://meetings.feishu.cn/minutes/api/space/delete'
+            params = {'object_tokens': index['object_token'],
+                    'is_destroyed': 'false',
+                    'language': 'zh_cn'}
+            requests.post(url=delete_url, params=params, headers=self.headers, proxies=proxies)
+            # 将该妙记彻底删除
+            requests.post(url=delete_url, params=params.update({'is_destroyed': 'true'}), headers=self.headers, proxies=proxies)
+            time.sleep(3)
+            self.get_minutes()
+            if self.minutes_num == old_minutes_num:
+                print(f"删除 http://meetings.feishu.cn/minutes/{index['object_token']} 失败，可能是没有该妙记的权限")
+                unsuccessed_num += 1
+            else:
+                successed_num += 1
+            if successed_num == num:
+                break
+        print(f"成功删除 {successed_num} 个妙记，跳过 {unsuccessed_num} 个妙记")
 
 if __name__ == '__main__':
 
     if not minutes_cookie:
         raise Exception("cookie不能为空！")
     
-    # 如果未填写管理参数，则定时检查是否有要下载的妙记
-    elif not manager_cookie:
-        while True:
-            print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()))
-            downloader = FeishuDownloader(minutes_cookie)
-            # 如果下载到了妙记则删除最早的一个妙记
-            if downloader.check_minutes():
-                downloader.delete_minutes(1)
-            time.sleep(check_interval)
-
-    # 如果填写了管理参数，则定时查询妙记空间使用情况，超出指定额度则删除最早的指定数量的妙记
-    else:
-        # 从manager_cookie中获取X-Csrf-Token
-        x_csrf_token = manager_cookie[manager_cookie.find(' csrf_token=') + len(' csrf_token='):manager_cookie.find(';', manager_cookie.find(' csrf_token='))]
-        if len(x_csrf_token) != 36:
-            raise Exception("manager_cookie中不包含csrf_token，请确保从请求`count?_t=`中获取！")
-
-        vc_used_bytes_old = 0  # 上次记录的已经使用的字节数
-        # 定期查询已使用的妙记空间字节数
-        while True:
-            print(time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()))
-            # query_url = f'https://www.feishu.cn/suite/admin/api/gaea/usages'
-            query_url = 'https://www.feishu.cn/suite/admin/resource/storage/overview?_t='+str(int(time.time()*1000))
-            manager_headers = {'cookie': manager_cookie, 'X-Csrf-Token': x_csrf_token}
-            res = requests.get(url=query_url, headers=manager_headers, proxies=proxies)
-            vc_used_bytes = int(res.json()['data']['detail']['vc'])
-            all_quota_bytes = int(res.json()['data']['quota'])
-            all_used_bytes = int(res.json()['data']['used'])
-            print(f"视频会议存储空间：{vc_used_bytes / 2 ** 30:.2f}GB/{vc_quota_bytes / 2 ** 30:.2f}GB")
-            print(f"总存储空间：{all_used_bytes / 2 ** 30:.2f}GB/{all_quota_bytes / 2 ** 30:.2f}GB")
-            if vc_used_bytes != vc_used_bytes_old:
-                downloader = FeishuDownloader(minutes_cookie)
-                downloader.check_minutes()
-                # 如果已用超过指定阈值则删除最早的两个妙记
-                while vc_used_bytes > vc_quota_bytes:
-                    print(f"已用空间超过{vc_quota_bytes / 2 ** 30:.2f}GB，删除最早的两个妙记")
-                    downloader.delete_minutes(2)
-                    time.sleep(3)
-                    res = requests.get(url=query_url, headers=manager_headers, proxies=proxies)
-                    res.raise_for_status()
-                    vc_used_bytes = int(res.json()['data']['detail']['vc'])
-                    print(f"视频会议存储空间：{vc_used_bytes / 2 ** 30:.2f}GB/{vc_quota_bytes / 2 ** 30:.2f}GB")
-            print(f"等待{check_interval}s后再次检查...")
-            vc_used_bytes_old = vc_used_bytes  # 更新已用字节数
-            time.sleep(check_interval)
+    # 定时检查是否有要下载的妙记
+    while True:
+        print(time.strftime('%Y-%m-%d %H:%M:%S', time.localtime()))
+        downloader = FeishuDownloader(minutes_cookie)
+        # 检查是否存在需要下载的妙记
+        downloader.check_minutes()
+        # 如果云端的妙记数量超过了最大限制，则删除最早的几个妙记
+        if downloader.minutes_num > vc_max_num:
+            print(f"删除最早的 {downloader.minutes_num - vc_max_num} 个妙记")
+            downloader.delete_minutes(downloader.minutes_num - vc_max_num)
+        time.sleep(check_interval)
