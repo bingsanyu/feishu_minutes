@@ -14,8 +14,7 @@ config.read('config.ini', encoding='utf-8')
 minutes_cookie = config.get('Cookies', 'cookie')
 # 获取下载设置
 space_name = int(config.get('下载设置', '所在空间'))
-list_size = int(config.get('下载设置', '每次检查的妙记数量'))
-vc_max_num = int(config.get('下载设置', '保留妙记的最大数量'))
+vc_max_num = int(config.get('下载设置', '保留云端妙记的最大数量'))
 check_interval = int(config.get('下载设置', '检查妙记的时间间隔（单位s，太短容易报错）'))
 download_type = int(config.get('下载设置', '文件类型'))
 subtitle_only = config.get('下载设置', '是否只下载字幕文件（是/否）')=='是'
@@ -56,17 +55,34 @@ class FeishuDownloader:
         self.meeting_time_dict = {} # 会议文件名称和会议时间的对应关系
         self.subtitle_type = 'srt' if subtitle_params['format']==3 else 'txt'
         
-    def get_minutes(self):
+    def get_minutes(self, last_timestamp=None):
         """
         批量获取妙记信息
+        Args:
+            last_timestamp: 上一次请求的最后一个会议的时间戳
         """
-        get_rec_url = f'https://meetings.feishu.cn/minutes/api/space/list?&size={list_size}&space_name={space_name}'
+        base_url = f'https://meetings.feishu.cn/minutes/api/space/list?size=20&space_name={space_name}'
+        if last_timestamp:
+            get_rec_url = f'{base_url}&timestamp={last_timestamp}'
+        else:
+            get_rec_url = base_url
+            self.all_minutes = []
         resp = requests.get(url=get_rec_url, headers=self.headers, proxies=proxies)
-        # 如果resp.json()['data']中没有list字段，则说明cookie失效
-        if 'list' not in resp.json()['data']:
+        data = resp.json()['data']
+        if 'list' not in data:
             raise Exception("minutes_cookie失效，请重新获取！")
-        self.all_minutes = list(reversed(resp.json()['data']['list'])) # 按时间正序排列的妙记信息（从旧到新）
-        self.minutes_num = len(self.all_minutes)
+        current_list = data['list']
+        self.all_minutes.extend(current_list)
+        if data.get('has_more', True) and current_list:
+            # 获取最后一个会议的时间戳
+            last_meeting = current_list[-1]
+            next_timestamp = last_meeting.get('share_time')
+            if next_timestamp:
+                self.get_minutes(next_timestamp)
+        # 所有数据获取完成后，对列表进行反转（从旧到新排序）
+        if not last_timestamp:  # 只在最初的调用中执行
+            self.all_minutes = list(reversed(self.all_minutes))
+            self.minutes_num = len(self.all_minutes)
 
     def check_minutes(self):
         """
