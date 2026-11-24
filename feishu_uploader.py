@@ -1,5 +1,6 @@
 import base64, configparser, time, uuid, zlib
-from concurrent.futures import as_completed, ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from pathlib import Path
 
 import requests
 from tqdm import tqdm
@@ -25,8 +26,10 @@ else:
 
 class FeishuUploader:
     def __init__(self, file_path, cookie):
-        self.file_path = file_path
-        self.block_size = 2**20*4
+        self.file_path = Path(file_path)
+        if not self.file_path.is_file():
+            raise ValueError(f"请选择有效的上传文件：{self.file_path}")
+        self.block_size = 4 * 2**20
         self.headers = {
             'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
             'cookie': cookie,
@@ -41,10 +44,15 @@ class FeishuUploader:
         self.upload_id = None
         self.object_token = None
 
-        with open(self.file_path, 'rb') as f:
-            self.file_size = f.seek(0, 2)
-            f.seek(0)
-            self.file_header = base64.b64encode(f.read(512)).decode()
+        self.file_size = self.file_path.stat().st_size
+        if not self.file_size:
+            raise ValueError("上传文件不能为空！")
+        with self.file_path.open('rb') as file:
+            self.file_header = base64.b64encode(file.read(512)).decode()
+
+    @property
+    def block_count(self):
+        return (self.file_size + self.block_size - 1) // self.block_size
 
     def get_quota(self):
         file_info = f'{uuid.uuid1()}_{self.file_size}'
@@ -57,41 +65,73 @@ class FeishuUploader:
     # 分片上传文件（预上传）
     # doc: https://open.feishu.cn/document/server-docs/docs/drive-v1/upload/multipart-upload-file-/upload_prepare
     def prepare_upload(self):
-        file_name = self.file_path.split("\\")[-1]
-        # 如果文件名中包含后缀，需要去掉后缀
-        if '.' in file_name:
-            file_name = file_name[:file_name.rfind('.')]
         prepare_url = f'https://meetings.feishu.cn/minutes/api/upload/prepare'
         json = {
-            'name': file_name,
+            'name': self.file_path.stem,
             'file_size': self.file_size,
             'file_header': self.file_header,
             'drive_upload': True,
             'upload_token': self.upload_token,
         }
-        prepare_res = requests.post(prepare_url, headers=self.headers, proxies=proxies, json=json).json()
-        self.vhid = prepare_res['data']['vhid']
-        self.upload_id = prepare_res['data']['upload_id']
-        self.object_token = prepare_res['data']['object_token']
+        response = requests.post(prepare_url, headers=self.headers, proxies=proxies, json=json)
+        response.raise_for_status()
+        payload = response.json()
+        if payload.get('code') != 0:
+            raise RuntimeError(f"飞书拒绝预上传（code={payload.get('code')}）")
+        data = payload['data']
+        self.block_size = int(data.get('block_size', self.block_size))
+        if self.block_size <= 0 or int(data.get('num_blocks', self.block_count)) != self.block_count:
+            raise ValueError("飞书预上传返回了无效的分片参数")
+        self.vhid = data['vhid']
+        self.upload_id = data['upload_id']
+        self.object_token = data['object_token']
 
     # 分片上传文件（上传分片）
     # doc: https://open.feishu.cn/document/server-docs/docs/drive-v1/upload/multipart-upload-file-/upload_part
     def upload_blocks(self):
-        with open(self.file_path, 'rb') as f:
-            f.seek(0)
-            block_count = (self.file_size + self.block_size - 1) // self.block_size
-            with ThreadPoolExecutor(max_workers=6) as executor:
-                completed_threads = []
-                with tqdm(total=block_count, unit='block') as progress_bar:
-                    for i in range(block_count):
-                        block_data = f.read(self.block_size)
-                        block_size = len(block_data)
-                        checksum = zlib.adler32(block_data) & 0xffffffff
-                        upload_url = f'https://internal-api-space.feishu.cn/space/api/box/stream/upload/block?upload_id={self.upload_id}&seq={i}&size={block_size}&checksum={checksum}'
-                        thread = executor.submit(requests.post, upload_url, headers=self.headers, proxies=proxies, data=block_data)
-                        completed_threads.append(thread)
-                    for thread in as_completed(completed_threads):
-                        progress_bar.update(1)
+        if self.block_count == 1:
+            with self.file_path.open('rb') as file, tqdm(total=1, unit='block') as progress:
+                data = file.read(self.file_size + 1)
+                if len(data) != self.file_size:
+                    raise ValueError("上传过程中源文件大小发生变化")
+                self.upload_block(0, data)
+                progress.update(1)
+            return
+
+        workers = 6
+        with self.file_path.open('rb') as file, ThreadPoolExecutor(max_workers=workers) as executor, \
+                tqdm(total=self.block_count, unit='block') as progress:
+            pending = set()
+            try:
+                for index in range(self.block_count):
+                    expected = min(self.block_size, self.file_size - index * self.block_size)
+                    data = file.read(expected)
+                    if len(data) != expected:
+                        raise ValueError("上传过程中源文件大小发生变化")
+                    pending.add(executor.submit(self.upload_block, index, data))
+                    if len(pending) == workers:
+                        finished, pending = wait(pending, return_when=FIRST_COMPLETED)
+                        for future in finished:
+                            future.result()
+                            progress.update(1)
+                if file.read(1):
+                    raise ValueError("上传过程中源文件大小发生变化")
+                for future in pending:
+                    future.result()
+                    progress.update(1)
+            finally:
+                for future in pending:
+                    future.cancel()
+
+    def upload_block(self, index, data):
+        checksum = zlib.adler32(data) & 0xffffffff
+        url = ('https://internal-api-space.feishu.cn/space/api/box/stream/upload/block'
+               f'?upload_id={self.upload_id}&seq={index}&size={len(data)}&checksum={checksum}')
+        response = requests.post(url, headers=self.headers, proxies=proxies, data=data)
+        response.raise_for_status()
+        code = response.json().get('code')
+        if code != 0:
+            raise RuntimeError(f"分片 {index} 上传失败（code={code}）")
     
     # 分片上传文件（完成上传）
     # doc: https://open.feishu.cn/document/server-docs/docs/drive-v1/upload/multipart-upload-file-/upload_finish
@@ -99,7 +139,7 @@ class FeishuUploader:
         complete_url1 = f'https://internal-api-space.feishu.cn/space/api/box/upload/finish/'
         json = {
             'upload_id': self.upload_id,
-            'num_blocks': (self.file_size + self.block_size - 1) // self.block_size,
+            'num_blocks': self.block_count,
             'vhid': self.vhid,
             'risk_detection_extra' : '{\"source_terminal\":1,\"file_operate_usage\":3,\"locale\":\"zh_cn\"}'
         }
@@ -110,7 +150,7 @@ class FeishuUploader:
         json = {
             'auto_transcribe': True,
             'language': 'mixed',
-            'num_blocks': (self.file_size + self.block_size - 1) // self.block_size,
+            'num_blocks': self.block_count,
             'upload_id': self.upload_id,
             'vhid': self.vhid,
             'upload_token': self.upload_token,
